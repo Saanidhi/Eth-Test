@@ -17,6 +17,7 @@
 
 static int rand_range(int, int);
 int error_inject(const char* path, fuse_op operation);
+int error_inject_write(const char* path, fuse_op operation, char* str);
 
 extern struct unreliablefs_config conf;
 
@@ -202,8 +203,96 @@ int error_inject(const char* path, fuse_op operation)
         fprintf(stdout, "%s triggered on operation '%s', %s\n",
                         errinj_name[err->type], op_name, path);
 	switch (err->type) {
+        case ERRINJ_WRITECORRUPT:
+            break;
         case ERRINJ_NOOP:
             rc = -ERRNO_NOOP;
+            fprintf(stdout, "NOOP triggered on operation");
+            break;
+        case ERRINJ_KILL_CALLER: ;
+            struct fuse_context *cxt = fuse_get_context();
+            if (cxt) {
+                int ret = kill(cxt->pid, DEFAULT_SIGNAL_NAME);
+                if (ret == -1) {
+                    perror("kill");
+                }
+                fprintf(stdout, "send signal %s to TID %d\n",
+                                strsignal(DEFAULT_SIGNAL_NAME), cxt->pid);
+            }
+            break;
+        case ERRINJ_ERRNO:
+            rc = op_random_errno(operation);
+            fprintf(stdout, "errno '%s'\n", strerror(rc));
+            rc = -rc;
+            break;
+        case ERRINJ_SLOWDOWN: ;
+	    struct timespec ts = {};
+	    ts.tv_nsec = err->duration;
+            fprintf(stdout, "start of '%s' slowdown for '%d' ns\n", op_name, err->duration);
+            if (nanosleep(&ts, NULL) != 0) {
+		perror("nanosleep");
+            } else {
+		fprintf(stdout, "end of '%s' slowdown with '%d' ns\n", op_name, err->duration);
+            }
+            break;
+        }
+    }
+
+cleanup:
+    pthread_mutex_unlock(&conf.mutex);
+    return rc;
+}
+
+int error_inject_write(const char* path, fuse_op operation, char *str)
+{
+    /* instead of returning an error in 'errno', the operation should return
+     * the negated error value (-errno) directly.
+     */
+    int rc = -0;
+    struct errinj_conf *err;
+    /* read configuration file on change */
+    pthread_mutex_lock(&conf.mutex);
+    if (strcmp(path, conf.config_path) == 0) {
+        config_delete(conf.errors);
+        conf.errors = config_init(path);
+        goto cleanup;
+    }
+    if (!conf.errors) {
+        goto cleanup;
+    }
+
+    /* apply error injections defined in configuration one by one */
+    TAILQ_FOREACH(err, conf.errors, entries) {
+        unsigned int p = rand_range(MIN_PROBABLITY, MAX_PROBABLITY);
+        if (!(p <= err->probability)) {
+            fprintf(stderr, "errinj '%s' skipped: probability (%d) is not matched\n",
+                            errinj_name[err->type], err->probability);
+            continue;
+        }
+        const char* op_name = fuse_op_name[operation];
+	if (is_regex_matched(err->path_regexp, path) != 0) {
+	    fprintf(stderr, "errinj '%s' skipped: path_regexp (%s) is not matched\n",
+                            errinj_name[err->type], err->path_regexp);
+	    continue;
+	}
+	if (is_regex_matched(err->op_regexp, op_name) != 0) {
+	    fprintf(stderr, "errinj '%s' skipped: op_regexp (%s) is not matched\n",
+                            errinj_name[err->type], err->op_regexp);
+	    continue;
+	}
+        fprintf(stdout, "%s triggered on operation '%s', %s\n",
+                        errinj_name[err->type], op_name, path);
+	switch (err->type) {
+        case ERRINJ_WRITECORRUPT:
+            int len =strlen(str);
+            printf("In ERRINJ_WRITECORRUPT : %d\n",len);
+            if(len >0)
+                str[len-1]= 'q';
+            rc = 0;
+            break;
+        case ERRINJ_NOOP:
+            rc = -ERRNO_NOOP;
+            fprintf(stdout, "NOOP triggered on operation");
             break;
         case ERRINJ_KILL_CALLER: ;
             struct fuse_context *cxt = fuse_get_context();

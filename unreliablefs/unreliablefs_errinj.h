@@ -25,6 +25,7 @@
 #define DEFAULT_SIGNAL_NAME SIGKILL
 
 int error_inject(const char* path, fuse_op operation);
+int error_inject_write(const char* path, fuse_op operation, char* str);
 struct err_inj_q *config_init(const char* conf_path);
 void config_delete(struct err_inj_q *config);
 int conf_option_handler(void* cfg, const char* section,
@@ -37,6 +38,7 @@ const char *errinj_name[] =
     "errinj_kill_caller",
     "errinj_noop",
     "errinj_slowdown",
+    "errinj_writecorrupt"
 };
 
 typedef enum {
@@ -44,6 +46,7 @@ typedef enum {
     ERRINJ_KILL_CALLER,
     ERRINJ_NOOP,
     ERRINJ_SLOWDOWN,
+    ERRINJ_WRITECORRUPT
 } errinj_type;
 
 typedef struct errinj_conf errinj_conf;
