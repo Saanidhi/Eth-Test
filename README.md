@@ -13,6 +13,7 @@ Supported fault injections are:
   (similar to [libeatmydata](https://github.com/stewartsmith/libeatmydata),
   but applicable to any file operation).
 - `errinj_slowdown` - slowdown invoked file operation.
+- `errinj_writecorrup` - injects random character on writes
 
 ### Building
 
@@ -39,6 +40,11 @@ $ cmake --build build --parallel
 $ mkdir /tmp/fs
 $ unreliablefs /tmp/fs -base_dir=/tmp -seed=1618680646
 $ cat << EOF > /tmp/fs/unreliablefs.conf
+[errinj_writecorrupt]
+op_regexp = .*
+path_regexp = .ldb
+probability = 1
+
 [errinj_noop]
 op_regexp = .*
 path_regexp = .*
